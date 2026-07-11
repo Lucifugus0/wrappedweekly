@@ -20,5 +20,5 @@ frontend/next-env.d.ts
 .DS_Store
 *.log
 
-# Claude Code session files
-.claude/scheduled_tasks.lock
+# Claude Code agent/session files
+.claude/
