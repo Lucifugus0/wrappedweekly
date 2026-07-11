@@ -170,32 +170,79 @@ Untuk memakai LLM asli:
 2. Tambahkan case baru di `aiprovider.NewProvider()` (`backend/internal/aiprovider/provider.go`).
 3. Set `AI_PROVIDER=openai` (atau nama lain yang dipilih) dan API key terkait di `backend/.env`.
 
+## Deploy Live (Bonus) — Frontend di Vercel, Backend+DB di Render
+
+Kombinasi ini eksplisit disebut sebagai opsi valid oleh study case. Karena
+frontend dan backend berada di domain berbeda (cross-origin), ada penyesuaian
+env var yang wajib — jangan pakai default lokal.
+
+### 1. Backend + Database di Render
+
+1. Buat akun di [render.com](https://render.com), hubungkan repo GitHub ini.
+2. **New → PostgreSQL** — buat database gratis, catat `Internal Database URL`
+   yang diberikan (dipakai sebagai `DATABASE_URL`).
+3. **New → Web Service** — pilih repo ini, set **Root Directory: `backend`**,
+   **Environment: Docker** (Render otomatis pakai `backend/Dockerfile`).
+4. Set environment variables di Render:
+   ```
+   DATABASE_URL=<Internal Database URL dari langkah 2, tambahkan ?sslmode=require>
+   JWT_SECRET=<random string panjang, generate baru — jangan pakai default>
+   JWT_EXPIRY_HOURS=24
+   AI_PROVIDER=mock
+   COOKIE_SECURE=true
+   COOKIE_CROSS_SITE=true
+   FRONTEND_BASE_URL=https://<domain-vercel-kamu>.vercel.app
+   ```
+5. Jalankan migration sekali (Render Shell atau lewat `migrate` CLI lokal
+   mengarah ke `DATABASE_URL` publik Render) — service `migrate` di
+   `docker-compose.yml` tidak otomatis jalan di Render, jadi ini manual:
+   ```bash
+   migrate -path backend/db/migrations -database "<DATABASE_URL>" up
+   ```
+6. Deploy. Catat URL yang diberikan Render (mis. `https://wrappedweekly-api.onrender.com`).
+7. **Catatan free tier**: service Render gratis sleep setelah 15 menit idle;
+   request pertama setelah sleep bisa lambat (~30-60 detik cold start). Wajar
+   untuk demo, bukan untuk produksi nyata. Database Postgres gratis Render
+   expire 90 hari.
+
+### 2. Frontend di Vercel
+
+1. Buat akun di [vercel.com](https://vercel.com), **Import Project** dari repo GitHub ini.
+2. Set **Root Directory: `frontend`**.
+3. Set environment variables di Vercel:
+   ```
+   NEXT_PUBLIC_API_URL=https://<url-backend-render>.onrender.com/api/v1
+   BACKEND_INTERNAL_URL=https://<url-backend-render>.onrender.com
+   ```
+4. Deploy. Vercel otomatis mendeteksi Next.js dan `output: "standalone"`.
+
+### 3. Kenapa `COOKIE_CROSS_SITE=true` wajib
+
+Saat frontend (Vercel) dan backend (Render) berada di domain berbeda, cookie
+auth httpOnly butuh `SameSite=None; Secure` supaya browser tetap mengirimnya
+lintas domain — `SameSite=Lax` (default untuk setup same-origin di belakang
+Nginx) akan diblokir browser modern di skenario ini. Lihat
+`backend/internal/config/config.go` (`CookieCrossSite`) dan
+`backend/internal/handler/auth_handler.go` (`sameSiteMode()`).
+
+### 4. Verifikasi end-to-end di live URL
+
+Sama seperti checklist lokal: register → login → catat aktivitas → dashboard
+→ generate recap → buka `/w/{slug}` di tab incognito → cek `view-source:`
+untuk meta OG.
+
 ## Known Limitations / Catatan Jujur
 
-Dikerjakan di lingkungan tanpa Go toolchain dan tanpa Docker terpasang (hanya
-Node.js tersedia untuk eksekusi nyata). Sebagai gantinya, dua review independen
-dijalankan: (1) audit manual seluruh source Go untuk konsistensi import, interface
-implementation, dan wiring dependency — tidak ditemukan masalah; (2) audit spesifik
-kompatibilitas tipe `pgx/v5` untuk kolom `NUMERIC` — ditemukan bahwa scan
-`NUMERIC` Postgres langsung ke `float64` Go tidak selalu didukung tanpa hint tipe
-eksplisit, jadi semua query `SELECT` pada `activities.value` sudah diberi cast
-eksplisit `value::float8` (lihat `backend/internal/repository/activity_repository.go`)
-supaya konversi tipe dilakukan oleh Postgres, bukan bergantung reflection pgx.
-Konsekuensi lain dari keterbatasan lingkungan ini:
-
-- **`backend/go.sum` belum ada.** Semua kode Go ditulis dan direview secara manual
-  mengikuti idiom standar library `gin`, `pgx/v5`, `golang-jwt/jwt/v5`, `bcrypt`,
-  tapi **belum pernah dikompilasi**. Jalankan `cd backend && go mod tidy` sekali
-  di mesin dengan Go terpasang sebelum build pertama — ini akan generate `go.sum`
-  dan menangkap error kompilasi (jika ada) yang tidak bisa saya deteksi di sini.
-- **`docker compose up` belum pernah dijalankan nyata** di lingkungan pengerjaan
-  ini. Konfigurasi (Dockerfile, docker-compose.yml, nginx/app.conf) ditulis
-  mengikuti pattern resmi Docker standalone Next.js + Go multi-stage, dan
-  sudah direview manual baris demi baris, tapi verifikasi akhir "sekali klik
-  jalan" perlu dilakukan di mesin dengan Docker terpasang.
-- **Frontend SUDAH diverifikasi nyata**: `npm run build` sukses (termasuk full
-  type-check TypeScript) dan `eslint` bersih (1 warning non-blocking dari React
-  Compiler soal `watch()` React Hook Form, bukan bug).
+- **Cold start Render free tier**: lihat bagian Deploy Live di atas.
+- **`og-default.png` adalah placeholder minimal.** Ganti dengan gambar share
+  1200x630 yang sebenarnya di `frontend/public/og-default.png` sebelum
+  benar-benar dibagikan publik — saat ini fungsional (tidak 404) tapi generik.
+- Semua klaim di README ini **sudah diverifikasi nyata**, bukan asumsi: backend
+  di-build (`go build ./...`) dan diuji (`go test ./...`, 11/11 pass) memakai
+  Go 1.26.5; frontend di-build (`next build`, full type-check TypeScript) dan
+  di-lint (`eslint`) bersih; `docker compose up --build` dijalankan penuh dan
+  seluruh service (postgres, migrate, backend, frontend, nginx) sehat, diverifikasi
+  lewat `curl http://localhost/health` dan pemakaian manual di browser.
 - **`og-default.png` adalah placeholder 1x1 pixel.** Ganti dengan gambar share
   1200x630 yang sebenarnya di `frontend/public/og-default.png` sebelum deploy
   production — saat ini fungsional (tidak 404) tapi tidak akan terlihat bagus

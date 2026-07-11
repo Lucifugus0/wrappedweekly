@@ -97,14 +97,21 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	response.OK(c, http.StatusOK, "logout berhasil", nil)
 }
 
+func (h *AuthHandler) sameSiteMode() http.SameSite {
+	if h.cfg.CookieCrossSite {
+		return http.SameSiteNoneMode
+	}
+	return http.SameSiteLaxMode
+}
+
 func (h *AuthHandler) setAuthCookie(c *gin.Context, token string) {
 	maxAge := int(h.cfg.JWTExpiry.Seconds())
-	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetSameSite(h.sameSiteMode())
 	c.SetCookie(middleware.CookieName, token, maxAge, "/", h.cfg.CookieDomain, h.cfg.CookieSecure, true)
 }
 
 func (h *AuthHandler) clearAuthCookie(c *gin.Context) {
-	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetSameSite(h.sameSiteMode())
 	c.SetCookie(middleware.CookieName, "", -1, "/", h.cfg.CookieDomain, h.cfg.CookieSecure, true)
 }
 
