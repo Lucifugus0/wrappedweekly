@@ -1,0 +1,24 @@
+# Env files with real secrets
+.env
+backend/.env
+frontend/.env
+frontend/.env.local
+!*.env.example
+
+# Backend
+backend/wrappedweekly
+backend/server
+backend/tmp/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+
+# OS / editor
+.DS_Store
+*.log
+
+# Claude Code session files
+.claude/scheduled_tasks.lock
